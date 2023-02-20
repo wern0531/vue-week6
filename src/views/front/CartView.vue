@@ -6,7 +6,7 @@
         <th></th>
         <th>品名</th>
         <th style="width: 150px">數量/單位</th>
-        <th>單價</th>
+        <th class="text-end">單價</th>
       </tr>
     </thead>
     <tbody>
@@ -52,19 +52,120 @@
     </tbody>
     <tfoot>
       <tr>
-        <td colspan="3" class="text-end">總計</td>
-        <td class="text-end">{{ calculateTotal(carts) }}</td>
-      </tr>
-      <tr>
         <td colspan="3" class="text-end text-success">折扣價</td>
         <td class="text-end text-success">{{ calculateFinalTotal(carts) }}</td>
       </tr>
     </tfoot>
   </table>
+
+  <div class="my-5 row justify-content-center">
+    <v-form ref="form" class="col-md-6" v-slot="{ errors }" @submit="onSubmit">
+      <div class="mb-3">
+        <label for="email" class="form-label">Email</label>
+        <v-field
+          id="email"
+          name="email"
+          type="email"
+          class="form-control"
+          :class="{ 'is-invalid': errors['email'] }"
+          placeholder="請輸入 Email"
+          rules="email|required"
+          v-model="user.email"
+        ></v-field>
+        <error-message name="email" class="invalid-feedback"></error-message>
+      </div>
+
+      <div class="mb-3">
+        <label for="name" class="form-label">收件人姓名</label>
+        <v-field
+          id="name"
+          name="姓名"
+          type="text"
+          class="form-control"
+          :class="{ 'is-invalid': errors['姓名'] }"
+          placeholder="請輸入姓名"
+          rules="required"
+          v-model="user.name"
+        ></v-field>
+        <error-message name="姓名" class="invalid-feedback"></error-message>
+      </div>
+
+      <div class="mb-3">
+        <label for="tel" class="form-label">收件人電話</label>
+        <v-field
+          id="tel"
+          name="電話"
+          type="text"
+          class="form-control"
+          :class="{ 'is-invalid': errors['電話'] }"
+          placeholder="請輸入電話"
+          :rules="isPhone"
+          v-model="user.tel"
+        ></v-field>
+        <error-message name="電話" class="invalid-feedback"></error-message>
+      </div>
+
+      <div class="mb-3">
+        <label for="address" class="form-label">收件人地址</label>
+        <v-field
+          id="address"
+          name="地址"
+          type="text"
+          class="form-control"
+          :class="{ 'is-invalid': errors['地址'] }"
+          placeholder="請輸入地址"
+          rules="required"
+          v-model="user.address"
+        ></v-field>
+        <error-message name="地址" class="invalid-feedback"></error-message>
+      </div>
+
+      <div class="mb-3">
+        <label for="message" class="form-label">留言</label>
+        <textarea
+          id="message"
+          class="form-control"
+          cols="30"
+          rows="10"
+          v-model="message"
+        ></textarea>
+      </div>
+      <div class="text-end">
+        <button
+          type="submit"
+          class="btn btn-danger"
+          :disabled="isclick === true"
+        >
+          送出訂單
+        </button>
+      </div>
+    </v-form>
+  </div>
 </template>
 
 <script>
+import { Form, Field, ErrorMessage, defineRule, configure } from "vee-validate";
+import { required, email } from "@vee-validate/rules";
+import { localize, loadLocaleFromURL } from "@vee-validate/i18n";
 const { VITE_APP_URL, VITE_APP_PATH } = import.meta.env;
+
+defineRule("required", required);
+defineRule("email", email);
+
+// Object.keys("@vee-validate/rules").forEach((rule) => {
+//   if (rule !== "default") {
+//     defineRule(rule, "@vee-validate/rules"[rule]);
+//   }
+// });
+
+// 讀取外部的資源
+loadLocaleFromURL("./zh_TW.json");
+
+// Activate the locale
+configure({
+  generateMessage: localize("zh_TW"),
+  validateOnInput: true, // 調整為：輸入文字時，就立即進行驗證
+});
 
 export default {
   data() {
@@ -81,15 +182,22 @@ export default {
       message: "",
       loadingItem: "",
       isLoading: false,
+      isclick: false,
     };
   },
   methods: {
     getCart() {
+      const loader = this.$loading.show({
+        // Optional parameters
+        container: this.fullPage ? null : this.$refs.formContainer,
+        canCancel: true,
+        onCancel: this.onCancel,
+      });
       this.$http
         .get(`${VITE_APP_URL}/v2/api/${VITE_APP_PATH}/cart`)
         .then((res) => {
           this.carts = res.data.data.carts;
-          console.log(this.carts);
+          loader.hide();
         })
         .catch((err) => {
           alert(err.response.data.message);
@@ -126,7 +234,7 @@ export default {
     delCarts() {
       if (this.carts.length > 0) {
         this.$http
-          .delete(`${VITE_APP_URL}/api/${VITE_APP_PATH}/carts`)
+          .delete(`${VITE_APP_URL}/v2/api/${VITE_APP_PATH}/carts`)
           .then((res) => {
             this.getCart();
             alert("購物車已清空");
@@ -154,6 +262,41 @@ export default {
         this.isLoading = false;
       }, 1000);
     },
+
+    // 驗證用
+    isPhone(value) {
+      const phoneNumber = /^(09)[0-9]{8}$/;
+      return phoneNumber.test(value) ? true : "需要正確的電話號碼";
+    },
+    //送出訂單
+    onSubmit() {
+      this.isclick = true;
+      const data = {
+        user: this.user,
+        message: this.message,
+      };
+      if (this.carts.length > 0) {
+        this.$http
+          .post(`${VITE_APP_URL}/v2/api/${VITE_APP_PATH}/order`, { data })
+          .then((res) => {
+            alert(res.data.message);
+            this.doAjax();
+            this.$refs.form.resetForm();
+            this.getCart();
+            this.isclick = false;
+          })
+          .catch((err) => {
+            alert(err.response.data.message);
+          });
+      } else {
+        alert("購物車沒有東西喔!!");
+      }
+    },
+  },
+  components: {
+    VForm: Form,
+    VField: Field,
+    ErrorMessage,
   },
   mounted() {
     this.getCart();
